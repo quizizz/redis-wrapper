@@ -101,7 +101,7 @@ class Redis {
           hosts: cluster.hosts,
         });
         const clusterOptions = {
-          enableAutoPipelining: cluster.autoPipelining,
+          enableAutoPipelining: cluster.autoPipelining || false,
           clusterRetryStrategy: retryStrategy,
         };
 
