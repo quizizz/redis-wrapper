@@ -1,10 +1,13 @@
 
-const IoRedis = require('ioredis');
+import IoRedis from 'ioredis';
+import EventEmitter from 'events';
 
 
 function retryStrategy(times) {
   if (times > 1000) {
-    return 'Retried 10 times';
+    // eslint-disable-next-line no-console
+    console.error('Retried redis connection 10 times');
+    return null;
   }
   const delay = Math.min(times * 100, 2000);
   return delay;
@@ -28,12 +31,17 @@ function addAuth(auth, options, info) {
  * @class Redis
  */
 class Redis {
+  name: string;
+  emitter: EventEmitter;
+  config: any;
+  client: IoRedis.Cluster | IoRedis.Redis;
+
   /**
    * @param {string} name - unique name to this service
    * @param {EventEmitter} emitter
    * @param {Object} config - configuration object of service
    */
-  constructor(name, emitter, config) {
+  constructor(name: string, emitter: EventEmitter, config: any) {
     this.name = name;
     this.emitter = emitter;
     this.config = Object.assign({
@@ -89,11 +97,13 @@ class Redis {
     }
 
     // try to make the connection
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       let client = null;
       const { config } = this;
       const { host, port, db, cluster, sentinel, auth } = config;
-      const infoObj = {};
+      const infoObj = {
+        mode: null,
+      };
 
       if (cluster.use === true) {
         Object.assign(infoObj, {
@@ -173,7 +183,7 @@ class Redis {
 
       // common events
       client.on('connect', () => {
-        this.success(`Successfully connected in ${infoObj.mode} mode`);
+        this.success(`Successfully connected in ${infoObj.mode} mode`, null);
       });
       client.on('error', (err) => {
         this.error(err, {});
@@ -184,13 +194,13 @@ class Redis {
       });
       client.on('close', () => {
         const error = new Error('Redis connection closed');
-        this.error(error);
+        this.error(error, null);
       });
       client.on('reconnecting', (time) => {
         this.log(`Reconnecting in ${infoObj.mode} mode after ${time} ms`, infoObj);
       });
       client.on('end', () => {
-        this.error(new Error('Connection ended'));
+        this.error(new Error('Connection ended'), null);
       });
     });
   }
@@ -203,7 +213,7 @@ class Redis {
   parse(result) { // eslint-disable-line
     result.forEach((res) => {
       if (res[0]) {
-        throw new Error(res[0], 'redis.multi', null);
+        throw new Error(`${res[0]} - redis.multi`);
       }
     });
     return result.map(res => res[1]);

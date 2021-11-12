@@ -1,6 +1,6 @@
 
 
-const Redis = require('../index.js');
+const Redis = require('../lib/index');
 const { EventEmitter } = require('events');
 
 const emitter = new EventEmitter();
