@@ -33,7 +33,7 @@ function addAuth(auth, options, info) {
 class Redis {
   name: string;
   emitter: EventEmitter;
-  config: any;
+  config: Record<string, any>;
   client: IoRedis.Cluster | IoRedis.Redis;
 
   /**
@@ -41,7 +41,7 @@ class Redis {
    * @param {EventEmitter} emitter
    * @param {Object} config - configuration object of service
    */
-  constructor(name: string, emitter: EventEmitter, config: any) {
+  constructor(name: string, emitter: EventEmitter, config: Record<string, any>) {
     this.name = name;
     this.emitter = emitter;
     this.config = Object.assign({
@@ -62,7 +62,7 @@ class Redis {
     this.client = null;
   }
 
-  log(message, data) {
+  log(message: string, data: unknown): void {
     this.emitter.emit('log', {
       service: this.name,
       message,
@@ -70,13 +70,13 @@ class Redis {
     });
   }
 
-  success(message, data) {
+  success(message: string, data: unknown): void {
     this.emitter.emit('success', {
       service: this.name, message, data,
     });
   }
 
-  error(err, data) {
+  error(err: Error, data: unknown): void {
     this.emitter.emit('error', {
       service: this.name,
       data,
@@ -91,7 +91,7 @@ class Redis {
    * @return {Promise<this, Error>} resolves with the instance itself
    *  rejects when can not connect after retires
    */
-  init() {
+  init(): Promise<Redis> {
     if (this.client) {
       return Promise.resolve(this);
     }
@@ -219,7 +219,7 @@ class Redis {
     return result.map(res => res[1]);
   }
 
-  ppl(arr) {
+  ppl(arr: any[]): Promise<any> {
     const batch = this.client.pipeline();
     arr.forEach(val => {
       batch[val.command](...val.args);
@@ -234,4 +234,4 @@ class Redis {
   }
 }
 
-module.exports = Redis;
+export = Redis;
