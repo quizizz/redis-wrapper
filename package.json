@@ -23,10 +23,10 @@
   },
   "homepage": "https://github.com/akshendra/redis-wrapper#readme",
   "dependencies": {
+    "@types/ioredis": "^4.28.1",
     "ioredis": "^3.2.2"
   },
   "devDependencies": {
-    "@types/ioredis": "^4.28.1",
     "@types/node": "^16.11.7",
     "@typescript-eslint/eslint-plugin": "^4.29.3",
     "@typescript-eslint/parser": "^4.29.3",
