@@ -154,6 +154,7 @@ class Redis {
           reconnectOnError: () => {
             return true;
           },
+          enableAutoPipelining: sentinel.autoPipelining || false,
         };
         addAuth(auth, options, infoObj);
         client = new IoRedis(options);
@@ -173,6 +174,7 @@ class Redis {
           reconnectOnError: () => {
             return true;
           },
+          enableAutoPipelining: config.autoPipelining || false,
         };
         addAuth(auth, options, infoObj);
         client = new IoRedis(options);
