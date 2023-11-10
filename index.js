@@ -33,10 +33,12 @@ class Redis {
    * @param {string} name - unique name to this service
    * @param {EventEmitter} emitter
    * @param {Object} config - configuration object of service
+   * @param {number} commandTimeout - config for command timeout in ms
    */
-  constructor(name, emitter, config) {
+  constructor(name, emitter, config, commandTimeout) {
     this.name = name;
     this.emitter = emitter;
+    this.commandTimeout = commandTimeout;
     this.config = Object.assign({
       host: 'localhost',
       port: 6379,
@@ -171,7 +173,7 @@ class Redis {
       }
 
       this.log(`Connecting in ${infoObj.mode} mode`, infoObj);
-      redisTimeout(client, 100);
+      redisTimeout(client, this.commandTimeout);
 
       // common events
       client.on('connect', () => {
