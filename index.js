@@ -1,5 +1,6 @@
 
 const IoRedis = require('ioredis');
+const redisTimeout = require('ioredis-timeout');
 
 
 function retryStrategy(times) {
@@ -170,6 +171,7 @@ class Redis {
       }
 
       this.log(`Connecting in ${infoObj.mode} mode`, infoObj);
+      redisTimeout(client, 100);
 
       // common events
       client.on('connect', () => {
