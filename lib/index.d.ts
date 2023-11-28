@@ -1,20 +1,47 @@
 /// <reference types="node" />
-import IoRedis from 'ioredis';
-import EventEmitter from 'events';
+import IoRedis from "ioredis";
+import EventEmitter from "events";
+interface RedisConfig {
+    host?: string;
+    port?: number;
+    db?: number;
+    autoPipelining?: boolean;
+    auth?: {
+        use: boolean;
+        password: string;
+    };
+    cluster?: {
+        use: boolean;
+        hosts: {
+            host: string;
+            port: number;
+        }[];
+        autoPipelining?: boolean;
+    };
+    sentinel?: {
+        use: boolean;
+        hosts: {
+            host: string;
+            port: number;
+        }[];
+        name: string;
+        autoPipelining?: boolean;
+    };
+}
 /**
  * @class Redis
  */
 declare class Redis {
     name: string;
     emitter: EventEmitter;
-    config: Record<string, any>;
+    config: RedisConfig;
     client: IoRedis.Cluster | IoRedis.Redis;
     /**
      * @param {string} name - unique name to this service
      * @param {EventEmitter} emitter
-     * @param {Object} config - configuration object of service
+     * @param {RedisConfig} config - configuration object of service
      */
-    constructor(name: string, emitter: EventEmitter, config: Record<string, any>);
+    constructor(name: string, emitter: EventEmitter, config: RedisConfig);
     log(message: string, data: unknown): void;
     success(message: string, data: unknown): void;
     error(err: Error, data: unknown): void;
