@@ -1,15 +1,23 @@
 /// <reference types="node" />
-import IoRedis from "ioredis";
+import { Redis as _Redis, Cluster } from "ioredis";
 import EventEmitter from "events";
 interface RedisConfig {
+    /** provide host ip/url, default - localhost */
     host?: string;
+    /** provide the port number, default - 6379 */
     port?: number;
+    /** provide the db number, default - 0 */
     db?: number;
+    /** enable auto pipelining, default - false */
     autoPipelining?: boolean;
+    /** provide auth if needed */
     auth?: {
         use: boolean;
         password: string;
     };
+    /** provide command timeout (not applicable for cluster), default - false */
+    commandTimeout?: number;
+    /** cluster config */
     cluster?: {
         use: boolean;
         hosts: {
@@ -18,6 +26,7 @@ interface RedisConfig {
         }[];
         autoPipelining?: boolean;
     };
+    /** sentinel config */
     sentinel?: {
         use: boolean;
         hosts: {
@@ -35,7 +44,7 @@ declare class Redis {
     name: string;
     emitter: EventEmitter;
     config: RedisConfig;
-    client: IoRedis.Cluster | IoRedis.Redis;
+    client: Cluster | _Redis;
     /**
      * @param {string} name - unique name to this service
      * @param {EventEmitter} emitter

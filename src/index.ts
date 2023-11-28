@@ -1,4 +1,9 @@
-import IoRedis from "ioredis";
+import IoRedis, {
+  Redis as _Redis,
+  Cluster,
+  ClusterOptions,
+  RedisOptions,
+} from "ioredis";
 import EventEmitter from "events";
 
 function retryStrategy(times: number): number {
@@ -25,16 +30,27 @@ function addAuth(auth, options, info) {
 }
 
 interface RedisConfig {
+  /** provide host ip/url, default - localhost */
   host?: string;
+  /** provide the port number, default - 6379 */
   port?: number;
+  /** provide the db number, default - 0 */
   db?: number;
+  /** enable auto pipelining, default - false */
   autoPipelining?: boolean;
+  /** provide auth if needed */
   auth?: { use: boolean; password: string };
+  /** provide command timeout (not applicable for cluster), default - false */
+  commandTimeout?: number;
+
+  /** cluster config */
   cluster?: {
     use: boolean;
     hosts: { host: string; port: number }[];
     autoPipelining?: boolean;
   };
+
+  /** sentinel config */
   sentinel?: {
     use: boolean;
     hosts: { host: string; port: number }[];
@@ -50,7 +66,7 @@ class Redis {
   name: string;
   emitter: EventEmitter;
   config: RedisConfig;
-  client: IoRedis.Cluster | IoRedis.Redis;
+  client: Cluster | _Redis;
 
   /**
    * @param {string} name - unique name to this service
@@ -130,7 +146,8 @@ class Redis {
     return new Promise((resolve) => {
       let client = null;
       const { config } = this;
-      const { host, port, db, cluster, sentinel, auth } = config;
+      const { host, port, db, cluster, sentinel, auth, commandTimeout } =
+        config;
       const infoObj = {
         mode: null,
       };
@@ -140,13 +157,13 @@ class Redis {
           mode: "CLUSTER",
           hosts: cluster.hosts,
         });
-        const clusterOptions = {
+        const clusterOptions: ClusterOptions = {
           enableAutoPipelining: cluster.autoPipelining || false,
           clusterRetryStrategy: retryStrategy,
         };
 
         addAuth(auth, clusterOptions, infoObj);
-        client = new IoRedis.Cluster(config.cluster.hosts, clusterOptions);
+        client = new Cluster(config.cluster.hosts, clusterOptions);
 
         // cluster specific events
         client.on("node error", (err) => {
@@ -176,7 +193,7 @@ class Redis {
           hosts,
           name,
         });
-        const options = {
+        const options: RedisOptions = {
           sentinels: hosts,
           name,
           db,
@@ -186,6 +203,9 @@ class Redis {
           },
           enableAutoPipelining: sentinel.autoPipelining || false,
         };
+        if (commandTimeout) {
+          options.commandTimeout = commandTimeout;
+        }
         addAuth(auth, options, infoObj);
         client = new IoRedis(options);
       } else {
@@ -196,7 +216,7 @@ class Redis {
           port,
           db,
         });
-        const options = {
+        const options: RedisOptions = {
           port,
           host,
           db,
@@ -206,6 +226,9 @@ class Redis {
           },
           enableAutoPipelining: config.autoPipelining || false,
         };
+        if (commandTimeout) {
+          options.commandTimeout = commandTimeout;
+        }
         addAuth(auth, options, infoObj);
         client = new IoRedis(options);
         // single node finish
