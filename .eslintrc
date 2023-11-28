@@ -1,36 +1,128 @@
 {
   "extends": [
     "plugin:import/errors",
-    "plugin:import/warnings"
+    "plugin:import/warnings",
+    "plugin:import/typescript"
   ],
   "settings": {
     "import/resolver": {
       "node": {
-        "extensions": [".mjs", ".js", ".json"]
+        "extensions": [
+          ".mjs",
+          ".js",
+          ".ts",
+          ".json"
+        ]
+      },
+      "alias": {
+        "map": [
+          [
+            "@src",
+            "./src"
+          ],
+          [
+            "@tests",
+            "./tests"
+          ]
+        ],
+        "extensions": [
+          ".js",
+          ".ts",
+          ".d.ts"
+        ]
       }
     },
     "import/extensions": [
       ".js",
       ".mjs",
       ".jsx",
+      ".ts"
     ],
-    "import/core-modules": [
-    ],
+    "import/core-modules": [],
     "import/ignore": [
       "node_modules",
-      "\\.(coffee|scss|css|less|hbs|svg|json)$",
-    ],
+      "\\.(coffee|scss|css|less|hbs|svg|json)$"
+    ]
   },
   "env": {
-    "es6": true,
+    "es2021": true,
     "node": true,
-    "mocha": true
+    "mocha": true,
+    "jest": true
   },
   "parserOptions": {
-    "ecmaVersion": 8
+    "ecmaVersion": 12
   },
+  "overrides": [
+    {
+      "files": [
+        "**/*.ts",
+        "**/*.tsx"
+      ],
+      "env": {
+        "es6": true,
+        "node": true
+      },
+      "extends": [
+        "eslint:recommended",
+        "plugin:@typescript-eslint/eslint-recommended",
+        "plugin:@typescript-eslint/recommended"
+      ],
+      "globals": {
+        "Atomics": "readonly",
+        "SharedArrayBuffer": "readonly",
+        "BigInt": "readonly"
+      },
+      "parser": "@typescript-eslint/parser",
+      "parserOptions": {
+        "ecmaVersion": 2018,
+        "sourceType": "module",
+        "project": "./tsconfig.json"
+      },
+      "plugins": [
+        "@typescript-eslint"
+      ],
+      "rules": {
+        "import/prefer-default-export": "off",
+        "indent": [
+          "error",
+          2,
+          {
+            "SwitchCase": 1
+          }
+        ],
+        "linebreak-style": [
+          "error",
+          "unix"
+        ],
+        "quotes": [
+          "error",
+          "single"
+        ],
+        "comma-dangle": [
+          "error",
+          "always-multiline"
+        ],
+        "@typescript-eslint/no-explicit-any": 0,
+        "semi": [
+          2,
+          "always"
+        ],
+        "no-shadow": "off",
+        "@typescript-eslint/ban-ts-comment": "off",
+        "@typescript-eslint/no-empty-function": "off",
+        "@typescript-eslint/no-inferrable-types": "off"
+      }
+    }
+  ],
   "rules": {
-    "import/no-unresolved": ["error", { "commonjs": true, "caseSensitive": true }],
+    "import/no-unresolved": [
+      "error",
+      {
+        "commonjs": true,
+        "caseSensitive": true
+      }
+    ],
     "import/named": "error",
     "import/default": "off",
     "import/namespace": "off",
@@ -38,67 +130,98 @@
     "import/no-named-as-default": "error",
     "import/no-named-as-default-member": "error",
     "import/no-deprecated": "off",
-    "import/no-extraneous-dependencies": ["error", {
-      "devDependencies": [
-        "test/**",
-        "tests/**",
-        "spec/**",
-        "**/__tests__/**",
-        "test.{js,jsx}",
-        "test-*.{js,jsx}",
-        "**/*.{test,spec}.{js,jsx}",
-        "**/jest.config.js",
-        "**/webpack.config.js",
-        "**/webpack.config.*.js",
-        "**/rollup.config.js",
-        "**/rollup.config.*.js",
-        "**/gulpfile.js",
-        "**/gulpfile.*.js",
-        "**/Gruntfile{,.js}",
-        "**/protractor.conf.js",
-        "**/protractor.conf.*.js",
-      ],
-      "optionalDependencies": false,
-    }],
+    "import/no-extraneous-dependencies": [
+      "error",
+      {
+        "devDependencies": [
+          "test/**",
+          "tests/**",
+          "spec/**",
+          "Gruntfile-beta.js",
+          "**/__tests__/**",
+          "test.{js,jsx}",
+          "test-*.{js,jsx}",
+          "**/*.{test,spec}.{js,jsx}",
+          "**/jest.config.js",
+          "**/webpack.config.js",
+          "**/webpack.config.*.js",
+          "**/rollup.config.js",
+          "**/rollup.config.*.js",
+          "**/gulpfile.js",
+          "**/gulpfile.*.js",
+          "**/Gruntfile{,.js}",
+          "**/protractor.conf.js",
+          "**/protractor.conf.*.js"
+        ],
+        "optionalDependencies": false
+      }
+    ],
     "import/no-mutable-exports": "error",
-
     "import/no-commonjs": "off",
     "import/no-amd": "error",
     "import/no-nodejs-modules": "off",
-
-    "import/first": ["error", "absolute-first"],
+    "import/first": [
+      "error",
+      "absolute-first"
+    ],
     "import/imports-first": "off",
     "import/no-duplicates": "error",
     "import/no-namespace": "off",
-    "import/extensions": ["error", "always", {
-          "js": "never",
-          "mjs": "never",
-          "jsx": "never",
-        }],
-    "import/order": ["off", {
-      "groups": ["builtin", "external", "internal", "parent", "sibling", "index"],
-      "newlines-between": "never",
-    }],
+    "import/extensions": [
+      "error",
+      "always",
+      {
+        "js": "never",
+        "mjs": "never",
+        "jsx": "never",
+        "ts": "never"
+      }
+    ],
+    "import/order": [
+      "off",
+      {
+        "groups": [
+          "builtin",
+          "external",
+          "internal",
+          "parent",
+          "sibling",
+          "index"
+        ],
+        "newlines-between": "never"
+      }
+    ],
     "import/prefer-default-export": "error",
     "import/no-restricted-paths": "off",
-    "import/max-dependencies": ["off", { "max": 10 }],
+    "import/max-dependencies": [
+      "off",
+      {
+        "max": 10
+      }
+    ],
     "import/no-absolute-path": "error",
     "import/no-dynamic-require": "off",
-    "import/no-internal-modules": ["off", {
-      "allow": [],
-    }],
+    "import/no-internal-modules": [
+      "off",
+      {
+        "allow": []
+      }
+    ],
     "import/unambiguous": "off",
     "import/no-webpack-loader-syntax": "error",
     "import/no-unassigned-import": "off",
     "import/no-named-default": "error",
-    "import/no-anonymous-default-export": ["off", {
-      "allowArray": false,
-      "allowArrowFunction": false,
-      "allowAnonymousClass": false,
-      "allowAnonymousFunction": false,
-      "allowLiteral": false,
-      "allowObject": false,
-    }],
+    "import/no-anonymous-default-export": [
+      "off",
+      {
+        "allowArray": false,
+        "allowArrowFunction": false,
+        "allowAnonymousClass": false,
+        "allowAnonymousFunction": false,
+        "allowLiteral": false,
+        "allowObject": false
+      }
+    ],
     "import/exports-last": "off",
     "import/group-exports": "off",
     "import/no-default-export": "off",
@@ -118,13 +241,16 @@
       }
     ],
     "camelcase": 0,
-    "comma-dangle": ["error", {
-      "arrays": "always-multiline",
-      "objects": "always-multiline",
-      "imports": "never",
-      "exports": "never",
-      "functions": "ignore"
-    }],
+    "comma-dangle": [
+      "error",
+      {
+        "arrays": "always-multiline",
+        "objects": "always-multiline",
+        "imports": "never",
+        "exports": "never",
+        "functions": "ignore"
+      }
+    ],
     "comma-spacing": [
       2,
       {
@@ -141,7 +267,7 @@
       "self"
     ],
     "constructor-super": 2,
-    "curly": 2,
+    "curly": 0,
     "default-case": 2,
     "dot-location": [
       2,
@@ -153,12 +279,21 @@
       2,
       "smart"
     ],
-    "generator-star-spacing": ["error", {
+    "generator-star-spacing": [
+      "error",
+      {
         "before": false,
         "after": true,
-        "anonymous": {"before": false, "after": true},
-        "method": {"before": true, "after": true}
-    }],
+        "anonymous": {
+          "before": false,
+          "after": true
+        },
+        "method": {
+          "before": true,
+          "after": true
+        }
+      }
+    ],
     "global-require": 0,
     "handle-callback-err": 1,
     "indent": [
@@ -176,13 +311,17 @@
       }
     ],
     "keyword-spacing": [
-      "error",
+      0,
       {
         "after": true,
         "before": false,
         "overrides": {
-          "else": { "before": true },
-          "catch": { "before": true }
+          "else": {
+            "before": true
+          },
+          "catch": {
+            "before": true
+          }
         }
       }
     ],
@@ -267,7 +406,7 @@
     "no-unneeded-ternary": 2,
     "no-unreachable": 2,
     "no-unused-expressions": [
-      2,
+      0,
       {
         "allowShortCircuit": true
       }
@@ -291,10 +430,6 @@
       2,
       "single",
       "avoid-escape"
-    ],
-    "radix": [
-      2,
-      "as-needed"
     ],
     "require-yield": 2,
     "semi": [

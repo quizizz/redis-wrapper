@@ -1,17 +1,47 @@
 
-const IoRedis = require('ioredis');
-const is = require('is_js');
+import IoRedis from 'ioredis';
+import EventEmitter from 'events';
+
+
+function retryStrategy(times) {
+  if (times > 1000) {
+    // eslint-disable-next-line no-console
+    console.error('Retried redis connection 10 times');
+    return null;
+  }
+  const delay = Math.min(times * 100, 2000);
+  return delay;
+}
+
+
+function addAuth(auth, options, info) {
+  if (auth.use === true) {
+    Object.assign(info, {
+      authentication: 'TRUE',
+    });
+    options.password = auth.password;
+  } else {
+    Object.assign(info, {
+      authentication: 'FALSE',
+    });
+  }
+}
 
 /**
  * @class Redis
  */
 class Redis {
+  name: string;
+  emitter: EventEmitter;
+  config: Record<string, any>;
+  client: IoRedis.Cluster | IoRedis.Redis;
+
   /**
    * @param {string} name - unique name to this service
    * @param {EventEmitter} emitter
    * @param {Object} config - configuration object of service
    */
-  constructor(name, emitter, config) {
+  constructor(name: string, emitter: EventEmitter, config: Record<string, any>) {
     this.name = name;
     this.emitter = emitter;
     this.config = Object.assign({
@@ -25,11 +55,14 @@ class Redis {
       cluster: Object.assign({
         use: false,
       }, config.cluster),
+      sentinel: Object.assign({
+        use: false,
+      }, config.sentinel),
     });
     this.client = null;
   }
 
-  log(message, data) {
+  log(message: string, data: unknown): void {
     this.emitter.emit('log', {
       service: this.name,
       message,
@@ -37,13 +70,13 @@ class Redis {
     });
   }
 
-  success(message, data) {
+  success(message: string, data: unknown): void {
     this.emitter.emit('success', {
       service: this.name, message, data,
     });
   }
 
-  error(err, data) {
+  error(err: Error, data: unknown): void {
     this.emitter.emit('error', {
       service: this.name,
       data,
@@ -58,45 +91,31 @@ class Redis {
    * @return {Promise<this, Error>} resolves with the instance itself
    *  rejects when can not connect after retires
    */
-  init() {
+  init(): Promise<Redis> {
     if (this.client) {
       return Promise.resolve(this);
     }
 
     // try to make the connection
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       let client = null;
       const { config } = this;
-      const { host, port, db, cluster, auth } = config;
-      const infoObj = {};
+      const { host, port, db, cluster, sentinel, auth } = config;
+      const infoObj = {
+        mode: null,
+      };
 
       if (cluster.use === true) {
-        // if we have to user cluster
         Object.assign(infoObj, {
           mode: 'CLUSTER',
           hosts: cluster.hosts,
         });
         const clusterOptions = {
-          clusterRetryStrategy(times) {
-            if (times > 10) {
-              reject();
-              return 'Retried 10 times';
-            }
-            const delay = Math.min(times * 200, 2000);
-            return delay;
-          },
+          enableAutoPipelining: cluster.autoPipelining || false,
+          clusterRetryStrategy: retryStrategy,
         };
 
-        if (auth.use === true) {
-          Object.assign(infoObj, {
-            authentication: 'TRUE',
-          });
-          clusterOptions.password = auth.password;
-        } else {
-          Object.assign(infoObj, {
-            authentication: 'FALSE',
-          });
-        }
+        addAuth(auth, clusterOptions, infoObj);
         client = new IoRedis.Cluster(config.cluster.hosts, clusterOptions);
 
         // cluster specific events
@@ -119,6 +138,26 @@ class Redis {
         });
 
         // cluster finish
+      } else if (sentinel.use === true) {
+        // sentinel mode
+        const { hosts, name } = sentinel;
+        Object.assign(infoObj, {
+          mode: 'SENTINEL',
+          hosts,
+          name,
+        });
+        const options = {
+          sentinels: hosts,
+          name,
+          db,
+          retryStrategy,
+          reconnectOnError: () => {
+            return true;
+          },
+          enableAutoPipelining: sentinel.autoPipelining || false,
+        };
+        addAuth(auth, options, infoObj);
+        client = new IoRedis(options);
       } else {
         // single node
         Object.assign(infoObj, {
@@ -131,29 +170,13 @@ class Redis {
           port,
           host,
           db,
-          retryStrategy: (times) => {
-            if (times > 10) {
-              reject();
-              return 'Retried 10 times';
-            }
-            const delay = Math.min(times * 200, 2000);
-            return delay;
-          },
+          retryStrategy,
           reconnectOnError: () => {
             return true;
           },
+          enableAutoPipelining: config.autoPipelining || false,
         };
-        if (auth.use === true) {
-          Object.assign(infoObj, {
-            authentication: 'TRUE',
-          });
-          options.password = auth.password;
-        } else {
-          Object.assign(infoObj, {
-            authentication: 'FALSE',
-          });
-        }
-
+        addAuth(auth, options, infoObj);
         client = new IoRedis(options);
         // single node finish
       }
@@ -162,7 +185,7 @@ class Redis {
 
       // common events
       client.on('connect', () => {
-        this.success(`Successfully connected in ${infoObj.mode} mode`);
+        this.success(`Successfully connected in ${infoObj.mode} mode`, null);
       });
       client.on('error', (err) => {
         this.error(err, {});
@@ -173,13 +196,13 @@ class Redis {
       });
       client.on('close', () => {
         const error = new Error('Redis connection closed');
-        this.error(error);
+        this.error(error, null);
       });
-      client.on('reconnecting', () => {
-        this.log(`Reconnecting in ${infoObj.mode} mode`, infoObj);
+      client.on('reconnecting', (time) => {
+        this.log(`Reconnecting in ${infoObj.mode} mode after ${time} ms`, infoObj);
       });
       client.on('end', () => {
-        this.error(new Error('Connection ended'));
+        this.error(new Error('Connection ended'), null);
       });
     });
   }
@@ -191,12 +214,26 @@ class Redis {
    */
   parse(result) { // eslint-disable-line
     result.forEach((res) => {
-      if (is.existy(res[0])) {
-        throw new Error(res[0], 'redis.multi', null);
+      if (res[0]) {
+        throw new Error(`${res[0]} - redis.multi`);
       }
     });
     return result.map(res => res[1]);
   }
+
+  ppl(arr: any[]): Promise<any> {
+    const batch = this.client.pipeline();
+    arr.forEach(val => {
+      batch[val.command](...val.args);
+    });
+    return batch.exec().then(response => {
+      const result = this.parse(response);
+      return result.map((res, index) => {
+        const action = arr[index].action || (x => x);
+        return action(res);
+      });
+    });
+  }
 }
 
-module.exports = Redis;
+export = Redis;
