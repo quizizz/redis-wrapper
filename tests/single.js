@@ -1,5 +1,6 @@
 const Redis = require("../lib/index");
 const { EventEmitter } = require("events");
+const promClient = require("prom-client");
 
 const emitter = new EventEmitter();
 emitter.on("log", console.log.bind(console));
@@ -52,11 +53,21 @@ async function doPPL(redis) {
   console.log(JSON.stringify(response, null, 2));
 }
 
-const redis = new Redis("redis", emitter, {
-  host: "127.0.0.1",
-  port: 6379,
-  commandTimeout: 100,
-});
+const redis = new Redis(
+  "redis",
+  emitter,
+  {
+    host: "127.0.0.1",
+    port: 6379,
+    commandTimeout: 100,
+  },
+  {
+    register: promClient.register,
+    labels: {
+      service: "test",
+    },
+  }
+);
 redis
   .init()
   .then(() => {
