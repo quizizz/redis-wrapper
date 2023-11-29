@@ -5,6 +5,9 @@ import IoRedis, {
   RedisOptions,
 } from "ioredis";
 import EventEmitter from "events";
+import { exists as isCommand } from "@ioredis/commands";
+import { Registry, Counter, Histogram } from "prom-client";
+import { performance } from "perf_hooks";
 
 function retryStrategy(times: number): number {
   if (times > 1000) {
@@ -67,15 +70,66 @@ class Redis {
   emitter: EventEmitter;
   config: RedisConfig;
   client: Cluster | _Redis;
+  commandTimeout?: number;
+  metrics?: {
+    register: Registry;
+    labels: { [key: string]: string };
+  };
+  trackers?: { commands?: Counter; errors?: Counter; latencies?: Histogram };
 
   /**
    * @param {string} name - unique name to this service
    * @param {EventEmitter} emitter
    * @param {RedisConfig} config - configuration object of service
+   * @param {Registry} metrics - prometheus client
    */
-  constructor(name: string, emitter: EventEmitter, config: RedisConfig) {
+  constructor(
+    name: string,
+    emitter: EventEmitter,
+    config: RedisConfig,
+    metrics?: {
+      register: Registry;
+      labels: { [key: string]: string };
+    }
+  ) {
     this.name = name;
     this.emitter = emitter;
+    this.commandTimeout = config.commandTimeout;
+    this.metrics = metrics;
+
+    if (this.metrics) {
+      // register counters
+      this.trackers = {};
+
+      // create counter for tracking the number of times redis commands are called
+      this.trackers.commands = new Counter({
+        name: `${this.name.replaceAll("-", "_")}:commands`,
+        help: "keep track of all redis commands",
+        labelNames: [...Object.keys(this.metrics.labels), "command"],
+        registers: [this.metrics.register],
+      });
+
+      // create counter for tracking the number of times redis commands have failed
+      this.trackers.errors = new Counter({
+        name: `${this.name.replaceAll("-", "_")}:errors`,
+        help: "keep track of all redis command errors",
+        labelNames: [
+          ...Object.keys(this.metrics.labels),
+          "command",
+          "errorMessage",
+        ],
+        registers: [this.metrics.register],
+      });
+
+      // create histogram for tracking latencies of redis commands
+      this.trackers.latencies = new Histogram({
+        name: `${this.name.replaceAll("-", "_")}:latencies`,
+        help: "keep track of redis command latencies",
+        labelNames: [...Object.keys(this.metrics.labels), "command"],
+        registers: [this.metrics.register],
+      });
+    }
+
     this.config = Object.assign(
       {
         host: "localhost",
@@ -128,6 +182,128 @@ class Redis {
       service: this.name,
       data,
       err,
+    });
+  }
+
+  makeError(message: string, data: unknown): Error {
+    const error = new Error(message);
+    this.error(error, data);
+    return error;
+  }
+
+  trackCommand(command: string): void {
+    if (this.trackers?.commands) {
+      this.trackers.commands.inc(
+        {
+          ...this.metrics.labels,
+          command,
+        },
+        1
+      );
+    }
+  }
+
+  trackErrors(command: string, errorMessage: string): void {
+    if (this.trackers?.errors) {
+      this.trackers.errors.inc(
+        {
+          ...this.metrics.labels,
+          command,
+          errorMessage,
+        },
+        1
+      );
+    }
+  }
+
+  trackLatencies(command: string, startTime: number): void {
+    if (this.trackers?.latencies) {
+      const endTime = performance.now();
+      this.trackers.latencies.observe(
+        {
+          ...this.metrics.labels,
+          command,
+        },
+        endTime - startTime
+      );
+    }
+  }
+
+  createTimeoutPromise(
+    ms: number,
+    command: string
+  ): {
+    timeoutPromise: Promise<unknown>;
+    clear: () => void;
+  } {
+    let timeoutId: NodeJS.Timeout;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(
+          this.makeError("redis.COMMAND_TIMEOUT", {
+            command,
+            timeout: ms,
+          })
+        );
+      }, ms);
+    });
+    return {
+      timeoutPromise,
+      clear: () => {
+        clearTimeout(timeoutId);
+      },
+    };
+  }
+
+  async executeCommand(target, prop, args): Promise<unknown> {
+    const startTime = performance.now();
+    try {
+      this.trackCommand(String(prop));
+      const result = await target[prop](...args);
+      this.trackLatencies(String(prop), startTime);
+      return result;
+    } catch (err) {
+      this.trackLatencies(String(prop), startTime);
+      this.trackErrors(String(prop), err.message);
+      throw this.makeError("redis.COMMAND_ERROR", {
+        command: prop,
+        args,
+        error: err,
+      });
+    }
+  }
+
+  makeProxy(client: Cluster | _Redis) {
+    return new Proxy(client, {
+      get: (target, prop) => {
+        // check if a command or not
+        if (!isCommand(String(prop))) {
+          return target[prop];
+        }
+
+        // check if client in ready state
+        if (this.client.status !== "ready") {
+          throw this.makeError("redis.NOT_READY", {
+            command: prop,
+          });
+        }
+
+        return (...args: unknown[]): Promise<unknown> => {
+          // If timeout is set, apply Promise.race
+          if (this.client.isCluster && this.commandTimeout) {
+            const { timeoutPromise, clear } = this.createTimeoutPromise(
+              this.commandTimeout,
+              String(prop)
+            );
+            return Promise.race([
+              this.executeCommand(target, prop, args),
+              timeoutPromise,
+            ]).finally(clear);
+          } else {
+            return this.executeCommand(target, prop, args);
+          }
+        };
+      },
     });
   }
 
@@ -235,6 +411,8 @@ class Redis {
       }
 
       this.log(`Connecting in ${infoObj.mode} mode`, infoObj);
+
+      client = this.makeProxy(client);
 
       // common events
       client.on("connect", () => {
