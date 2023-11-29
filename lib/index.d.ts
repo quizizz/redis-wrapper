@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { Redis as _Redis, Cluster } from "ioredis";
 import EventEmitter from "events";
-import { Registry } from "prom-client";
+import { Registry, Counter, Histogram } from "prom-client";
 interface RedisConfig {
     /** provide host ip/url, default - localhost */
     host?: string;
@@ -53,6 +53,9 @@ declare class Redis {
             [key: string]: string;
         };
     };
+    trackers?: {
+        [key: string]: Counter | Histogram;
+    };
     /**
      * @param {string} name - unique name to this service
      * @param {EventEmitter} emitter
@@ -69,6 +72,7 @@ declare class Redis {
     success(message: string, data: unknown): void;
     error(err: Error, data: unknown): void;
     makeError(message: string, data: unknown): Error;
+    makeProxy(client: any): any;
     /**
      * Connect to redis server with the config
      *

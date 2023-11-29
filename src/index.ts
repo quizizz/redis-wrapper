@@ -186,8 +186,8 @@ class Redis {
     return error;
   }
 
-  makeProxy() {
-    return new Proxy(this.client, {
+  makeProxy(client) {
+    return new Proxy(client, {
       get: (target, prop) => {
         if (isCommand(String(prop))) {
           // check if client in ready state
@@ -218,7 +218,7 @@ class Redis {
             try {
               const promises = [];
               promises.push(target[prop](...args));
-              (this.trackers["commands"] as Counter).inc(
+              (this.trackers["commands"] as Counter)?.inc(
                 {
                   ...this.metrics.labels,
                   command: String(prop),
@@ -230,7 +230,7 @@ class Redis {
               }
               const result = await Promise.race(promises);
               const endTime = performance.now();
-              (this.trackers["latencies"] as Histogram).observe(
+              (this.trackers["latencies"] as Histogram)?.observe(
                 {
                   ...this.metrics.labels,
                   command: String(prop),
@@ -240,14 +240,14 @@ class Redis {
               return result;
             } catch (err) {
               const endTime = performance.now();
-              (this.trackers["latencies"] as Histogram).observe(
+              (this.trackers["latencies"] as Histogram)?.observe(
                 {
                   ...this.metrics.labels,
                   command: String(prop),
                 },
                 endTime - startTime
               );
-              (this.trackers["errors"] as Counter).inc(
+              (this.trackers["errors"] as Counter)?.inc(
                 {
                   ...this.metrics.labels,
                   command: String(prop),
@@ -372,7 +372,7 @@ class Redis {
 
       this.log(`Connecting in ${infoObj.mode} mode`, infoObj);
 
-      client = this.makeProxy();
+      client = this.makeProxy(client);
 
       // common events
       client.on("connect", () => {
