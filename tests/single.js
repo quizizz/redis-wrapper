@@ -64,7 +64,7 @@ const redis = new Redis(
   {
     register: promClient.register,
     labels: {
-      service: "test",
+      service: "test-test_test9",
     },
   }
 );

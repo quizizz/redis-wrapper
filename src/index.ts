@@ -103,7 +103,7 @@ class Redis {
 
       // create counter for tracking the number of times redis commands are called
       this.trackers.commands = new Counter({
-        name: `${this.name}_commands`,
+        name: `${this.name.replaceAll("-", "_")}:commands`,
         help: "keep track of all redis commands",
         labelNames: [...Object.keys(this.metrics.labels), "command"],
         registers: [this.metrics.register],
@@ -111,7 +111,7 @@ class Redis {
 
       // create counter for tracking the number of times redis commands have failed
       this.trackers.errors = new Counter({
-        name: `${this.name}_errors`,
+        name: `${this.name.replaceAll("-", "_")}:errors`,
         help: "keep track of all redis command errors",
         labelNames: [
           ...Object.keys(this.metrics.labels),
@@ -123,7 +123,7 @@ class Redis {
 
       // create histogram for tracking latencies of redis commands
       this.trackers.latencies = new Histogram({
-        name: `${this.name}_latencies`,
+        name: `${this.name.replaceAll("-", "_")}:latencies`,
         help: "keep track of redis command latencies",
         labelNames: [...Object.keys(this.metrics.labels), "command"],
         registers: [this.metrics.register],
