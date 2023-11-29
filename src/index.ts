@@ -75,7 +75,7 @@ class Redis {
     register: Registry;
     labels: { [key: string]: string };
   };
-  trackers?: { commands: Counter; errors: Counter; latencies: Histogram };
+  trackers?: { commands?: Counter; errors?: Counter; latencies?: Histogram };
 
   /**
    * @param {string} name - unique name to this service
@@ -99,6 +99,8 @@ class Redis {
 
     if (this.metrics) {
       // register counters
+      this.trackers = {};
+
       // create counter for tracking the number of times redis commands are called
       this.trackers.commands = new Counter({
         name: "redis_command_counter",

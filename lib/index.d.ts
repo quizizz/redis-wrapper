@@ -54,9 +54,9 @@ declare class Redis {
         };
     };
     trackers?: {
-        commands: Counter;
-        errors: Counter;
-        latencies: Histogram;
+        commands?: Counter;
+        errors?: Counter;
+        latencies?: Histogram;
     };
     /**
      * @param {string} name - unique name to this service
