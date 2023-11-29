@@ -45,6 +45,7 @@ declare class Redis {
     emitter: EventEmitter;
     config: RedisConfig;
     client: Cluster | _Redis;
+    commandTimeout?: number;
     /**
      * @param {string} name - unique name to this service
      * @param {EventEmitter} emitter
@@ -54,6 +55,7 @@ declare class Redis {
     log(message: string, data: unknown): void;
     success(message: string, data: unknown): void;
     error(err: Error, data: unknown): void;
+    makeError(message: string, data: unknown): Error;
     /**
      * Connect to redis server with the config
      *

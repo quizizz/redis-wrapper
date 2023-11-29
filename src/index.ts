@@ -5,6 +5,7 @@ import IoRedis, {
   RedisOptions,
 } from "ioredis";
 import EventEmitter from "events";
+import { exists as isCommand } from "@ioredis/commands";
 
 function retryStrategy(times: number): number {
   if (times > 1000) {
@@ -67,6 +68,7 @@ class Redis {
   emitter: EventEmitter;
   config: RedisConfig;
   client: Cluster | _Redis;
+  commandTimeout?: number;
 
   /**
    * @param {string} name - unique name to this service
@@ -76,6 +78,7 @@ class Redis {
   constructor(name: string, emitter: EventEmitter, config: RedisConfig) {
     this.name = name;
     this.emitter = emitter;
+    this.commandTimeout = config.commandTimeout;
     this.config = Object.assign(
       {
         host: "localhost",
@@ -129,6 +132,12 @@ class Redis {
       data,
       err,
     });
+  }
+
+  makeError(message: string, data: unknown): Error {
+    const error = new Error(message);
+    this.error(error, data);
+    return error;
   }
 
   /**
@@ -235,6 +244,53 @@ class Redis {
       }
 
       this.log(`Connecting in ${infoObj.mode} mode`, infoObj);
+
+      client = new Proxy(client, {
+        get: (target, prop) => {
+          if (isCommand(String(prop))) {
+            // check if client in ready state
+            if (this.client.status !== "ready") {
+              throw this.makeError("redis.NOT_READY", {
+                command: prop,
+              });
+            }
+
+            // check if cluster and command timeout is set
+            let promiseTimeout;
+            if (this.client.isCluster && this.commandTimeout) {
+              promiseTimeout = (ms) =>
+                new Promise((_, reject) =>
+                  setTimeout(() => {
+                    reject(
+                      this.makeError("redis.COMMAND_TIMEOUT", {
+                        command: prop,
+                        timeout: ms,
+                      })
+                    );
+                  }, ms)
+                );
+            }
+
+            return async (...args) => {
+              try {
+                const promises = [];
+                promises.push(target[prop](...args));
+                if (promiseTimeout) {
+                  promises.push(promiseTimeout(this.commandTimeout));
+                }
+                return await Promise.race(promises);
+              } catch (err) {
+                throw this.makeError("redis.COMMAND_ERROR", {
+                  command: prop,
+                  args,
+                  error: err,
+                });
+              }
+            };
+          }
+          return target[prop];
+        },
+      });
 
       // common events
       client.on("connect", () => {

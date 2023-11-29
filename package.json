@@ -23,6 +23,7 @@
   },
   "homepage": "https://github.com/akshendra/redis-wrapper#readme",
   "dependencies": {
+    "@ioredis/commands": "^1.2.0",
     "ioredis": "5.3.2"
   },
   "devDependencies": {
