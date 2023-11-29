@@ -14,6 +14,8 @@ async function doSome(client) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     try {
       await client.set(`Key:${i}`, i);
+      const data = await client.get(`Key:${i}`);
+      console.log(`Fetched: ${data}`);
     } catch (err) {
       console.log(err);
     }

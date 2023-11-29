@@ -255,51 +255,54 @@ class Redis {
     };
   }
 
+  async executeCommand(target, prop, args): Promise<unknown> {
+    const startTime = performance.now();
+    try {
+      this.trackCommand(String(prop));
+      const result = await target[prop](...args);
+      this.trackLatencies(String(prop), startTime);
+      return result;
+    } catch (err) {
+      this.trackLatencies(String(prop), startTime);
+      this.trackErrors(String(prop), err.message);
+      throw this.makeError("redis.COMMAND_ERROR", {
+        command: prop,
+        args,
+        error: err,
+      });
+    }
+  }
+
   makeProxy(client: Cluster | _Redis) {
     return new Proxy(client, {
       get: (target, prop) => {
-        if (isCommand(String(prop))) {
-          // check if client in ready state
-          if (this.client.status !== "ready") {
-            throw this.makeError("redis.NOT_READY", {
-              command: prop,
-            });
-          }
-
-          return async (...args: unknown[]): Promise<unknown> => {
-            const startTime = performance.now();
-            try {
-              this.trackCommand(String(prop));
-              let result: unknown;
-              // check if cluster and command timeout is set
-              if (this.client.isCluster && this.commandTimeout) {
-                const { timeoutPromise, clear } = this.createTimeoutPromise(
-                  this.commandTimeout,
-                  String(prop)
-                );
-                result = await Promise.race([
-                  target[prop](...args),
-                  timeoutPromise,
-                ]).finally(() => {
-                  clear();
-                });
-              } else {
-                result = await target[prop](...args);
-              }
-              this.trackLatencies(String(prop), startTime);
-              return result;
-            } catch (err) {
-              this.trackLatencies(String(prop), startTime);
-              this.trackErrors(String(prop), err.message);
-              throw this.makeError("redis.COMMAND_ERROR", {
-                command: prop,
-                args,
-                error: err,
-              });
-            }
-          };
+        // check if a command or not
+        if (!isCommand(String(prop))) {
+          return target[prop];
         }
-        return target[prop];
+
+        // check if client in ready state
+        if (this.client.status !== "ready") {
+          throw this.makeError("redis.NOT_READY", {
+            command: prop,
+          });
+        }
+
+        return (...args: unknown[]): Promise<unknown> => {
+          // If timeout is set, apply Promise.race
+          if (this.client.isCluster && this.commandTimeout) {
+            const { timeoutPromise, clear } = this.createTimeoutPromise(
+              this.commandTimeout,
+              String(prop)
+            );
+            return Promise.race([
+              this.executeCommand(target, prop, args),
+              timeoutPromise,
+            ]).finally(clear);
+          } else {
+            return this.executeCommand(target, prop, args);
+          }
+        };
       },
     });
   }

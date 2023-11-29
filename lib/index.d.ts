@@ -81,6 +81,7 @@ declare class Redis {
         timeoutPromise: Promise<unknown>;
         clear: () => void;
     };
+    executeCommand(target: any, prop: any, args: any): Promise<unknown>;
     makeProxy(client: Cluster | _Redis): Cluster | IoRedis;
     /**
      * Connect to redis server with the config
