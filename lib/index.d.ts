@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { Redis as _Redis, Cluster } from "ioredis";
+import IoRedis, { Redis as _Redis, Cluster } from "ioredis";
 import EventEmitter from "events";
 import { Registry, Counter, Histogram } from "prom-client";
 interface RedisConfig {
@@ -54,7 +54,9 @@ declare class Redis {
         };
     };
     trackers?: {
-        [key: string]: Counter | Histogram;
+        commands: Counter;
+        errors: Counter;
+        latencies: Histogram;
     };
     /**
      * @param {string} name - unique name to this service
@@ -72,7 +74,14 @@ declare class Redis {
     success(message: string, data: unknown): void;
     error(err: Error, data: unknown): void;
     makeError(message: string, data: unknown): Error;
-    makeProxy(client: any): any;
+    trackCommand(command: string): void;
+    trackErrors(command: string, errorMessage: string): void;
+    trackLatencies(command: string, startTime: number): void;
+    createTimeoutPromise(ms: number, command: string): {
+        timeoutPromise: Promise<unknown>;
+        clear: () => void;
+    };
+    makeProxy(client: Cluster | _Redis): Cluster | IoRedis;
     /**
      * Connect to redis server with the config
      *

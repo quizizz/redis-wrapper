@@ -75,7 +75,7 @@ class Redis {
     register: Registry;
     labels: { [key: string]: string };
   };
-  trackers?: { [key: string]: Counter | Histogram };
+  trackers?: { commands: Counter; errors: Counter; latencies: Histogram };
 
   /**
    * @param {string} name - unique name to this service
@@ -96,12 +96,11 @@ class Redis {
     this.emitter = emitter;
     this.commandTimeout = config.commandTimeout;
     this.metrics = metrics;
-    this.trackers = {};
 
     if (this.metrics) {
       // register counters
       // create counter for tracking the number of times redis commands are called
-      this.trackers["commands"] = new Counter({
+      this.trackers.commands = new Counter({
         name: "redis_command_counter",
         help: "keep track of all redis commands",
         labelNames: [...Object.keys(this.metrics.labels), "command"],
@@ -109,15 +108,19 @@ class Redis {
       });
 
       // create counter for tracking the number of times redis commands have failed
-      this.trackers["errors"] = new Counter({
+      this.trackers.errors = new Counter({
         name: "redis_command_error_counter",
         help: "keep track of all redis command errors",
-        labelNames: [...Object.keys(this.metrics.labels), "command"],
+        labelNames: [
+          ...Object.keys(this.metrics.labels),
+          "command",
+          "errorMessage",
+        ],
         registers: [this.metrics.register],
       });
 
       // create histogram for tracking latencies of redis commands
-      this.trackers["latencies"] = new Histogram({
+      this.trackers.latencies = new Histogram({
         name: "redis_command_latency",
         help: "keep track of redis command latencies",
         labelNames: [...Object.keys(this.metrics.labels), "command"],
@@ -186,7 +189,71 @@ class Redis {
     return error;
   }
 
-  makeProxy(client) {
+  trackCommand(command: string): void {
+    if (this.trackers?.commands) {
+      this.trackers.commands.inc(
+        {
+          ...this.metrics.labels,
+          command,
+        },
+        1
+      );
+    }
+  }
+
+  trackErrors(command: string, errorMessage: string): void {
+    if (this.trackers?.errors) {
+      this.trackers.errors.inc(
+        {
+          ...this.metrics.labels,
+          command,
+          errorMessage,
+        },
+        1
+      );
+    }
+  }
+
+  trackLatencies(command: string, startTime: number): void {
+    if (this.trackers?.latencies) {
+      const endTime = performance.now();
+      this.trackers.latencies.observe(
+        {
+          ...this.metrics.labels,
+          command,
+        },
+        endTime - startTime
+      );
+    }
+  }
+
+  createTimeoutPromise(
+    ms: number,
+    command: string
+  ): {
+    timeoutPromise: Promise<unknown>;
+    clear: () => void;
+  } {
+    let timeoutId: NodeJS.Timeout;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(
+          this.makeError("redis.COMMAND_TIMEOUT", {
+            command,
+            timeout: ms,
+          })
+        );
+      }, ms);
+    });
+    return {
+      timeoutPromise,
+      clear: () => {
+        clearTimeout(timeoutId);
+      },
+    };
+  }
+
+  makeProxy(client: Cluster | _Redis) {
     return new Proxy(client, {
       get: (target, prop) => {
         if (isCommand(String(prop))) {
@@ -197,63 +264,31 @@ class Redis {
             });
           }
 
-          // check if cluster and command timeout is set
-          let promiseTimeout;
-          if (this.client.isCluster && this.commandTimeout) {
-            promiseTimeout = (ms) =>
-              new Promise((_, reject) =>
-                setTimeout(() => {
-                  reject(
-                    this.makeError("redis.COMMAND_TIMEOUT", {
-                      command: prop,
-                      timeout: ms,
-                    })
-                  );
-                }, ms)
-              );
-          }
-
-          return async (...args) => {
+          return async (...args: unknown[]): Promise<unknown> => {
             const startTime = performance.now();
             try {
-              const promises = [];
-              promises.push(target[prop](...args));
-              (this.trackers["commands"] as Counter)?.inc(
-                {
-                  ...this.metrics.labels,
-                  command: String(prop),
-                },
-                1
-              );
-              if (promiseTimeout) {
-                promises.push(promiseTimeout(this.commandTimeout));
+              this.trackCommand(String(prop));
+              let result: unknown;
+              // check if cluster and command timeout is set
+              if (this.client.isCluster && this.commandTimeout) {
+                const { timeoutPromise, clear } = this.createTimeoutPromise(
+                  this.commandTimeout,
+                  String(prop)
+                );
+                result = await Promise.race([
+                  target[prop](...args),
+                  timeoutPromise,
+                ]).finally(() => {
+                  clear();
+                });
+              } else {
+                result = await target[prop](...args);
               }
-              const result = await Promise.race(promises);
-              const endTime = performance.now();
-              (this.trackers["latencies"] as Histogram)?.observe(
-                {
-                  ...this.metrics.labels,
-                  command: String(prop),
-                },
-                endTime - startTime
-              );
+              this.trackLatencies(String(prop), startTime);
               return result;
             } catch (err) {
-              const endTime = performance.now();
-              (this.trackers["latencies"] as Histogram)?.observe(
-                {
-                  ...this.metrics.labels,
-                  command: String(prop),
-                },
-                endTime - startTime
-              );
-              (this.trackers["errors"] as Counter)?.inc(
-                {
-                  ...this.metrics.labels,
-                  command: String(prop),
-                },
-                1
-              );
+              this.trackLatencies(String(prop), startTime);
+              this.trackErrors(String(prop), err.message);
               throw this.makeError("redis.COMMAND_ERROR", {
                 command: prop,
                 args,
