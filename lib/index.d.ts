@@ -1,6 +1,7 @@
 /// <reference types="node" />
 import { Redis as _Redis, Cluster } from "ioredis";
 import EventEmitter from "events";
+import { Registry } from "prom-client";
 interface RedisConfig {
     /** provide host ip/url, default - localhost */
     host?: string;
@@ -46,12 +47,24 @@ declare class Redis {
     config: RedisConfig;
     client: Cluster | _Redis;
     commandTimeout?: number;
+    metrics?: {
+        register: Registry;
+        labels: {
+            [key: string]: string;
+        };
+    };
     /**
      * @param {string} name - unique name to this service
      * @param {EventEmitter} emitter
      * @param {RedisConfig} config - configuration object of service
+     * @param {Registry} metrics - prometheus client
      */
-    constructor(name: string, emitter: EventEmitter, config: RedisConfig);
+    constructor(name: string, emitter: EventEmitter, config: RedisConfig, metrics?: {
+        register: Registry;
+        labels: {
+            [key: string]: string;
+        };
+    });
     log(message: string, data: unknown): void;
     success(message: string, data: unknown): void;
     error(err: Error, data: unknown): void;

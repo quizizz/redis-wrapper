@@ -6,6 +6,8 @@ import IoRedis, {
 } from "ioredis";
 import EventEmitter from "events";
 import { exists as isCommand } from "@ioredis/commands";
+import { Registry, Counter, Histogram } from "prom-client";
+import { performance } from "perf_hooks";
 
 function retryStrategy(times: number): number {
   if (times > 1000) {
@@ -69,16 +71,60 @@ class Redis {
   config: RedisConfig;
   client: Cluster | _Redis;
   commandTimeout?: number;
+  metrics?: {
+    register: Registry;
+    labels: { [key: string]: string };
+  };
+  trackers?: { [key: string]: Counter | Histogram };
 
   /**
    * @param {string} name - unique name to this service
    * @param {EventEmitter} emitter
    * @param {RedisConfig} config - configuration object of service
+   * @param {Registry} metrics - prometheus client
    */
-  constructor(name: string, emitter: EventEmitter, config: RedisConfig) {
+  constructor(
+    name: string,
+    emitter: EventEmitter,
+    config: RedisConfig,
+    metrics?: {
+      register: Registry;
+      labels: { [key: string]: string };
+    }
+  ) {
     this.name = name;
     this.emitter = emitter;
     this.commandTimeout = config.commandTimeout;
+    this.metrics = metrics;
+    this.trackers = {};
+
+    if (this.metrics) {
+      // register counters
+      // create counter for tracking the number of times redis commands are called
+      this.trackers["commands"] = new Counter({
+        name: "redis_command_counter",
+        help: "keep track of all redis commands",
+        labelNames: [...Object.keys(this.metrics.labels), "command"],
+        registers: [this.metrics.register],
+      });
+
+      // create counter for tracking the number of times redis commands have failed
+      this.trackers["errors"] = new Counter({
+        name: "redis_command_error_counter",
+        help: "keep track of all redis command errors",
+        labelNames: [...Object.keys(this.metrics.labels), "command"],
+        registers: [this.metrics.register],
+      });
+
+      // create histogram for tracking latencies of redis commands
+      this.trackers["latencies"] = new Histogram({
+        name: "redis_command_latency",
+        help: "keep track of redis command latencies",
+        labelNames: [...Object.keys(this.metrics.labels), "command"],
+        registers: [this.metrics.register],
+      });
+    }
+
     this.config = Object.assign(
       {
         host: "localhost",
@@ -138,6 +184,87 @@ class Redis {
     const error = new Error(message);
     this.error(error, data);
     return error;
+  }
+
+  makeProxy() {
+    return new Proxy(this.client, {
+      get: (target, prop) => {
+        if (isCommand(String(prop))) {
+          // check if client in ready state
+          if (this.client.status !== "ready") {
+            throw this.makeError("redis.NOT_READY", {
+              command: prop,
+            });
+          }
+
+          // check if cluster and command timeout is set
+          let promiseTimeout;
+          if (this.client.isCluster && this.commandTimeout) {
+            promiseTimeout = (ms) =>
+              new Promise((_, reject) =>
+                setTimeout(() => {
+                  reject(
+                    this.makeError("redis.COMMAND_TIMEOUT", {
+                      command: prop,
+                      timeout: ms,
+                    })
+                  );
+                }, ms)
+              );
+          }
+
+          return async (...args) => {
+            const startTime = performance.now();
+            try {
+              const promises = [];
+              promises.push(target[prop](...args));
+              (this.trackers["commands"] as Counter).inc(
+                {
+                  ...this.metrics.labels,
+                  command: String(prop),
+                },
+                1
+              );
+              if (promiseTimeout) {
+                promises.push(promiseTimeout(this.commandTimeout));
+              }
+              const result = await Promise.race(promises);
+              const endTime = performance.now();
+              (this.trackers["latencies"] as Histogram).observe(
+                {
+                  ...this.metrics.labels,
+                  command: String(prop),
+                },
+                endTime - startTime
+              );
+              return result;
+            } catch (err) {
+              const endTime = performance.now();
+              (this.trackers["latencies"] as Histogram).observe(
+                {
+                  ...this.metrics.labels,
+                  command: String(prop),
+                },
+                endTime - startTime
+              );
+              (this.trackers["errors"] as Counter).inc(
+                {
+                  ...this.metrics.labels,
+                  command: String(prop),
+                },
+                1
+              );
+              throw this.makeError("redis.COMMAND_ERROR", {
+                command: prop,
+                args,
+                error: err,
+              });
+            }
+          };
+        }
+        return target[prop];
+      },
+    });
   }
 
   /**
@@ -245,52 +372,7 @@ class Redis {
 
       this.log(`Connecting in ${infoObj.mode} mode`, infoObj);
 
-      client = new Proxy(client, {
-        get: (target, prop) => {
-          if (isCommand(String(prop))) {
-            // check if client in ready state
-            if (this.client.status !== "ready") {
-              throw this.makeError("redis.NOT_READY", {
-                command: prop,
-              });
-            }
-
-            // check if cluster and command timeout is set
-            let promiseTimeout;
-            if (this.client.isCluster && this.commandTimeout) {
-              promiseTimeout = (ms) =>
-                new Promise((_, reject) =>
-                  setTimeout(() => {
-                    reject(
-                      this.makeError("redis.COMMAND_TIMEOUT", {
-                        command: prop,
-                        timeout: ms,
-                      })
-                    );
-                  }, ms)
-                );
-            }
-
-            return async (...args) => {
-              try {
-                const promises = [];
-                promises.push(target[prop](...args));
-                if (promiseTimeout) {
-                  promises.push(promiseTimeout(this.commandTimeout));
-                }
-                return await Promise.race(promises);
-              } catch (err) {
-                throw this.makeError("redis.COMMAND_ERROR", {
-                  command: prop,
-                  args,
-                  error: err,
-                });
-              }
-            };
-          }
-          return target[prop];
-        },
-      });
+      client = this.makeProxy();
 
       // common events
       client.on("connect", () => {
