@@ -1,6 +1,6 @@
 {
   "name": "@quizizz/redis",
-  "version": "0.3.3",
+  "version": "0.3.5",
   "description": "A simple redis wrapper using ioredis",
   "main": "lib/index.js",
   "scripts": {
